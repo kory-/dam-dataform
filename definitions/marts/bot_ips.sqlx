@@ -2,7 +2,7 @@ config {
   type: "table",
   schema: "dam_workflow_test",
   name: "bot_ips",
-  description: "Simple rule-based bot detection",
+  description: "ML-based bot detection using BQML AUTOENCODER",
   bigquery: {
     partitionBy: "log_date",
     clusterBy: ["ip", "bot_flag"]
@@ -11,24 +11,14 @@ config {
   dependencies: ["ip_features"]
 }
 
--- Simple rule-based bot detection (matching DDL schema)
+-- ML-based bot detection using anomaly detection
 SELECT
   ip,
   log_date,
-  -- Risk scoring
-  CAST((
-    CASE WHEN max_rps > 10 THEN 0.3 ELSE 0 END +
-    CASE WHEN err_ratio > 0.3 THEN 0.3 ELSE err_ratio END +
-    CASE WHEN ua_entropy = 0 AND req_total > 100 THEN 0.2 ELSE 0 END +
-    CASE WHEN req_total > 1000 AND unique_uri < 5 THEN 0.2 ELSE 0 END
-  ) AS FLOAT64) AS anomaly_score,
-  -- Rule-based bot detection
-  CAST(CASE
-    WHEN max_rps > 10 THEN TRUE  -- High requests per second
-    WHEN err_ratio > 0.3 THEN TRUE  -- High error rate
-    WHEN ua_entropy = 0 AND req_total > 100 THEN TRUE  -- Single UA with many requests
-    WHEN req_total > 1000 AND unique_uri < 5 THEN TRUE  -- Many requests to few URIs
-    ELSE FALSE
-  END AS BOOLEAN) AS bot_flag
-FROM ${ref("ip_features")}
-WHERE log_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 7 DAY)
+  mean_squared_error AS anomaly_score,
+  is_anomaly AS bot_flag
+FROM ML.DETECT_ANOMALIES(
+  MODEL `${dataform.projectConfig.defaultDatabase}.${dataform.projectConfig.defaultSchema}.bot_model`,
+  STRUCT(0.05 AS contamination),
+  TABLE ${ref("ip_features")}
+)
