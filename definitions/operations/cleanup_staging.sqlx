@@ -1,0 +1,13 @@
+config {
+  type: "operations",
+  schema: "dam_workflow_test",
+  name: "cleanup_staging",
+  description: "Clean up old data from staging table",
+  hasOutput: false,
+  tags: ["operations", "cleanup"]
+}
+
+-- Clean up staging data older than retention period
+-- Extended to 14 days to handle potential delayed log arrivals
+DELETE FROM ${ref("cf_logs_staging")}
+WHERE DATE(date) < DATE_SUB(CURRENT_DATE(), INTERVAL 14 DAY)

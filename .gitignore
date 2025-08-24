@@ -1,0 +1,21 @@
+# Dataform
+node_modules/
+.df-credentials.json
+.df-cache/
+.df-compiled/
+
+# Environment variables
+.env
+.env.local
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*

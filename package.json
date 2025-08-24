@@ -1,0 +1,14 @@
+{
+  "name": "dam-dataform",
+  "version": "1.0.0",
+  "description": "Dataform project for DAM CloudFront log analysis pipeline",
+  "dependencies": {
+    "@dataform/core": "3.0.0"
+  },
+  "scripts": {
+    "compile": "dataform compile",
+    "run": "dataform run",
+    "test": "dataform test",
+    "run-tag": "dataform run --tags"
+  }
+}

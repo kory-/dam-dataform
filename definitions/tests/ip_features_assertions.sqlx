@@ -1,0 +1,110 @@
+config {
+  type: "assertion",
+  schema: "dam_workflow_test",
+  name: "ip_features_assertions",
+  tags: ["test", "quality", "feature"]
+}
+
+-- Dataform assertions should return 0 rows when successful
+WITH test_results AS (
+  -- Test 1: No NULL values in required fields
+  SELECT 
+    "ip_features_null_check" AS test_name,
+    COUNT(*) AS failure_count
+  FROM ${ref("ip_features")}
+  WHERE log_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 3 DAY)
+    AND (
+      ip IS NULL
+      OR log_date IS NULL
+      OR req_total IS NULL
+      OR unique_uri IS NULL
+    )
+
+  UNION ALL
+
+  -- Test 2: No duplicate IP/date combinations
+  SELECT 
+    "ip_features_duplicates" AS test_name,
+    COUNT(*) AS failure_count
+  FROM (
+    SELECT 
+      ip,
+      log_date,
+      COUNT(*) AS dup_count
+    FROM ${ref("ip_features")}
+    WHERE log_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 3 DAY)
+    GROUP BY ip, log_date
+    HAVING COUNT(*) > 1
+  )
+
+  UNION ALL
+
+  -- Test 3: Valid ratio values (between 0 and 1)
+  SELECT 
+    "ip_features_invalid_ratios" AS test_name,
+    COUNT(*) AS failure_count
+  FROM ${ref("ip_features")}
+  WHERE log_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 3 DAY)
+    AND (
+      err_ratio < 0 OR err_ratio > 1
+      OR uri_diversity_ratio < 0 OR uri_diversity_ratio > 1
+    )
+
+  UNION ALL
+
+  -- Test 4: Reasonable request counts
+  SELECT 
+    "ip_features_unreasonable_counts" AS test_name,
+    COUNT(*) AS failure_count
+  FROM ${ref("ip_features")}
+  WHERE log_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 3 DAY)
+    AND (
+      req_total < 1  -- At least 1 request
+      OR req_total > 1000000  -- Not more than 1M requests per day per IP
+      OR unique_uri < 1  -- At least 1 unique URI
+      OR unique_uri > req_total  -- Can't have more unique URIs than total requests
+    )
+
+  UNION ALL
+
+  -- Test 5: Valid entropy values
+  SELECT 
+    "ip_features_invalid_entropy" AS test_name,
+    COUNT(*) AS failure_count
+  FROM ${ref("ip_features")}
+  WHERE log_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 3 DAY)
+    AND (
+      ua_entropy < 0  -- Entropy cannot be negative
+      OR uri_entropy < 0
+    )
+
+  UNION ALL
+
+  -- Test 6: Max RPS validation
+  SELECT 
+    "ip_features_invalid_rps" AS test_name,
+    COUNT(*) AS failure_count
+  FROM ${ref("ip_features")}
+  WHERE log_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 3 DAY)
+    AND (
+      max_rps < 0  -- RPS cannot be negative
+      OR max_rps > 10000  -- Unreasonably high RPS
+      OR avg_rps < 0
+      OR avg_rps > max_rps  -- Average can't exceed maximum
+    )
+
+  UNION ALL
+
+  -- Test 7: Data completeness check
+  SELECT 
+    "ip_features_data_completeness" AS test_name,
+    1 AS failure_count
+  FROM (SELECT 1)
+  WHERE (
+    SELECT COUNT(DISTINCT log_date)
+    FROM ${ref("ip_features")}
+    WHERE log_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 3 DAY)
+  ) < 3  -- Should have at least 3 days of data
+)
+-- Only return failed tests
+SELECT * FROM test_results WHERE failure_count > 0

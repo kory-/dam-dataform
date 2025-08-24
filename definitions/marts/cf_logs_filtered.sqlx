@@ -1,0 +1,18 @@
+config {
+  type: "view",
+  schema: "dam_workflow_test",
+  name: "cf_logs_filtered",
+  description: "Filtered CloudFront logs excluding static content",
+  tags: ["view", "mart"],
+  dependencies: []
+}
+
+-- Filter out static content for analysis (matching DDL view)
+SELECT
+  *
+FROM `${dataform.projectConfig.defaultDatabase}.${dataform.projectConfig.defaultSchema}.cf_logs`
+WHERE NOT REGEXP_CONTAINS(
+  sc_content_type,
+  r'^(image/|text/css|application/(javascript|x-javascript)|application/font|font/|image/vnd\.microsoft\.icon)'
+)
+AND sc_content_type IS NOT NULL

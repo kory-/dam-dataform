@@ -1,0 +1,18 @@
+config {
+  type: "view",
+  schema: "dam_workflow_test",
+  name: "logs_enriched",
+  description: "CloudFront logs enriched with bot detection results",
+  tags: ["view", "mart"],
+  dependencies: ["cf_logs_filtered", "bot_ips"]
+}
+
+-- Enrich logs with bot detection results (matching DDL view)
+SELECT
+  l.*,
+  b.bot_flag,
+  b.anomaly_score
+FROM ${ref("cf_logs_filtered")} AS l
+LEFT JOIN ${ref("bot_ips")} AS b
+  ON l.c_ip = b.ip
+  AND DATE(l.date) = b.log_date

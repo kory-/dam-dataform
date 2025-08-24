@@ -1,0 +1,20 @@
+{
+  "environments": [
+    {
+      "name": "production",
+      "gitRef": "main",
+      "configOverride": {
+        "defaultSchema": "dataform_prod",
+        "assertionSchema": "dataform_prod_assertions"
+      }
+    },
+    {
+      "name": "development",
+      "gitRef": "develop",
+      "configOverride": {
+        "defaultSchema": "dataform_dev",
+        "assertionSchema": "dataform_dev_assertions"
+      }
+    }
+  ]
+}

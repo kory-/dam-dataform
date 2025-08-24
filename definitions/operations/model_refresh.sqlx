@@ -1,0 +1,23 @@
+config {
+  type: "operations",
+  schema: "dam_workflow_test",
+  name: "model_refresh",
+  description: "Refresh BQML bot detection model with recent training data",
+  hasOutput: false,
+  disabled: true,  // Disabled by default - not required for standard pipeline
+  tags: ["operations", "ml", "training", "manual"]
+}
+
+-- Recreate the bot detection model with recent data
+-- This should be run periodically (e.g., monthly) to update the model
+CREATE OR REPLACE MODEL `${dataform.projectConfig.defaultDatabase}.${dataform.projectConfig.defaultSchema}.bot_model`
+OPTIONS(
+  model_type = 'AUTOENCODER'
+) AS
+SELECT
+  req_total,
+  unique_uri,
+  err_ratio,
+  max_rps,
+  ua_entropy
+FROM ${ref("ip_features")}
