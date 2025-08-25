@@ -3,10 +3,6 @@ config {
   schema: "dam_workflow_test",
   name: "bot_ips",
   description: "ML-based bot detection using BQML AUTOENCODER",
-  bigquery: {
-    partitionBy: "log_date",
-    clusterBy: ["ip", "bot_flag"]
-  },
   tags: ["mart"],
   dependencies: ["ip_features"]
 }
