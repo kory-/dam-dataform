@@ -1,28 +1,16 @@
 config {
-  type: "incremental",
+  type: "table",
   schema: "dam_workflow_test",
   name: "ip_features",
   description: "IP-based feature engineering for bot detection",
-  uniqueKey: ["ip", "log_date"],
   bigquery: {
     partitionBy: "log_date",
-    clusterBy: ["ip"],
-    updatePartitionFilter: dataform.projectConfig.vars?.runDate ? 
-      `log_date >= DATE_SUB(DATE("${dataform.projectConfig.vars.runDate}"), INTERVAL ${dataform.projectConfig.vars?.reprocessWindow || 3} DAY)` :
-      `log_date >= DATE_SUB(CURRENT_DATE(), INTERVAL ${dataform.projectConfig.vars?.reprocessWindow || 3} DAY)`
+    clusterBy: ["ip"]
   },
-  tags: ["feature", "incremental"],
+  tags: ["feature"],
   dependencies: ["cf_logs_filtered"]
 }
 
-js {
-  // 変数定義（--varsオプションで上書き可能）
-  // 使用例: dataform run --vars=runDate=2025-08-20
-  const runDate = dataform.projectConfig.vars?.runDate ? 
-    `DATE("${dataform.projectConfig.vars.runDate}")` : 
-    "CURRENT_DATE()";
-  const reprocessWindow = dataform.projectConfig.vars?.reprocessWindow || "3";
-}
 
 -- Feature engineering for bot detection (simplified version)
 WITH logs AS (
@@ -34,10 +22,6 @@ WITH logs AS (
     sc_status,
     cs_user_agent
   FROM ${ref("cf_logs_filtered")}  -- フィルタ済みビューを参照
-  ${when(incremental(),
-    `WHERE DATE(date) >= DATE_SUB(${runDate}, INTERVAL ${reprocessWindow} DAY)`,
-    ""
-  )}
 ),
 per_sec AS (
   SELECT
@@ -77,13 +61,8 @@ ua_entropy AS (
   GROUP BY ip, log_date
 )
 SELECT
-  s.ip,
-  s.log_date,
-  CAST(s.req_total AS INT64) AS req_total,
-  CAST(s.unique_uri AS INT64) AS unique_uri,
-  CAST(s.err_ratio AS FLOAT64) AS err_ratio,
-  CAST(s.max_rps AS INT64) AS max_rps,
-  CAST(IFNULL(e.ua_entropy, 0.0) AS FLOAT64) AS ua_entropy
+  s.*,
+  IFNULL(e.ua_entropy, 0.0) AS ua_entropy
 FROM ip_stats s
 LEFT JOIN ua_entropy e
 USING(ip, log_date)
