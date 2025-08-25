@@ -4,7 +4,7 @@ config {
   name: "cf_logs_filtered",
   description: "Filtered CloudFront logs excluding static content",
   tags: ["view", "mart"],
-  dependencies: []
+  dependencies: ["cf_logs"]
 }
 
 -- Filter out static content for analysis (matching DDL view)
