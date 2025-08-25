@@ -12,7 +12,7 @@ config {
       `log_date >= DATE_SUB(CURRENT_DATE(), INTERVAL ${dataform.projectConfig.vars?.reprocessWindow || 3} DAY)`
   },
   tags: ["feature", "incremental"],
-  dependencies: ["cf_logs"],
+  dependencies: ["cf_logs_filtered"],
   assertions: {
     uniqueKey: ["ip", "log_date"],
     nonNull: ["ip", "log_date", "req_total"]
@@ -28,137 +28,66 @@ js {
   const reprocessWindow = dataform.projectConfig.vars?.reprocessWindow || "3";
 }
 
--- Feature engineering for bot detection
-WITH filtered_logs AS (
+-- Feature engineering for bot detection (simplified version)
+WITH logs AS (
   SELECT
     c_ip AS ip,
     DATE(date) AS log_date,
+    DATETIME(date, time) AS dt,
     cs_uri_stem,
     sc_status,
-    cs_user_agent,
-    time,
-    time_to_first_byte
-  FROM `${dataform.projectConfig.defaultDatabase}.${dataform.projectConfig.defaultSchema}.cf_logs`
-  WHERE 1=1
-    -- Exclude static content for feature calculation
-    AND NOT REGEXP_CONTAINS(
-      IFNULL(sc_content_type, ''),
-      r'^(image/|text/css|application/(javascript|x-javascript)|application/font|font/|image/vnd\.microsoft\.icon)'
-    )
-    ${when(incremental(),
-      `AND DATE(date) >= DATE_SUB(${runDate}, INTERVAL ${reprocessWindow} DAY)`,
-      ""
-    )}
+    cs_user_agent
+  FROM ${ref("cf_logs_filtered")}  -- フィルタ済みビューを参照
+  ${when(incremental(),
+    `WHERE DATE(date) >= DATE_SUB(${runDate}, INTERVAL ${reprocessWindow} DAY)`,
+    ""
+  )}
 ),
--- Calculate requests per second
-per_second_stats AS (
+per_sec AS (
   SELECT
-    ip,
-    log_date,
-    DATETIME_TRUNC(
-      DATETIME(log_date, IFNULL(time, TIME '00:00:00')), 
-      SECOND
-    ) AS second_bucket,
-    COUNT(*) AS requests_in_second
-  FROM filtered_logs
-  GROUP BY ip, log_date, second_bucket
+    *,
+    COUNT(*) OVER (
+      PARTITION BY ip,
+                   DATETIME_TRUNC(dt, SECOND)
+    ) AS rps
+  FROM logs
 ),
--- Basic request statistics
-ip_basic_stats AS (
+ip_stats AS (
   SELECT
     ip,
     log_date,
     COUNT(*) AS req_total,
     COUNT(DISTINCT cs_uri_stem) AS unique_uri,
-    -- Error ratio calculation
-    SAFE_DIVIDE(
-      COUNTIF(sc_status >= 400),
-      COUNT(*)
-    ) AS err_ratio,
-    -- Average time to first byte
-    AVG(time_to_first_byte) AS avg_ttfb,
-    -- Request time distribution
-    STDDEV(EXTRACT(HOUR FROM time) * 3600 + 
-           EXTRACT(MINUTE FROM time) * 60 + 
-           EXTRACT(SECOND FROM time)) AS time_variance
-  FROM filtered_logs
+    SUM(IF(sc_status >= 400, 1, 0)) / COUNT(*) AS err_ratio,
+    MAX(rps) AS max_rps
+  FROM per_sec
   GROUP BY ip, log_date
 ),
--- Maximum requests per second
-max_rps_stats AS (
-  SELECT 
-    ip,
-    log_date,
-    MAX(requests_in_second) AS max_rps,
-    AVG(requests_in_second) AS avg_rps
-  FROM per_second_stats
-  GROUP BY ip, log_date
-),
--- User-Agent entropy calculation
-ua_entropy_calc AS (
+ua_entropy AS (
   SELECT
     ip,
     log_date,
-    -- Shannon entropy of User-Agent distribution
-    -SUM(ua_prob * SAFE.LOG(ua_prob, 2)) AS ua_entropy,
-    COUNT(DISTINCT cs_user_agent) AS unique_user_agents
+    -SUM(p * LN(p)) AS ua_entropy
   FROM (
     SELECT
       ip,
       log_date,
-      cs_user_agent,
-      COUNT(*) AS ua_count,
-      SUM(COUNT(*)) OVER (PARTITION BY ip, log_date) AS total_count,
-      SAFE_DIVIDE(
-        COUNT(*),
-        SUM(COUNT(*)) OVER (PARTITION BY ip, log_date)
-      ) AS ua_prob
-    FROM filtered_logs
+      COUNT(*) AS ua_cnt,
+      SUM(COUNT(*)) OVER (PARTITION BY ip, log_date) AS total_cnt,
+      COUNT(*) / SUM(COUNT(*)) OVER (PARTITION BY ip, log_date) AS p
+    FROM logs
     GROUP BY ip, log_date, cs_user_agent
   )
   GROUP BY ip, log_date
-),
--- URI pattern analysis
-uri_pattern_stats AS (
-  SELECT
-    ip,
-    log_date,
-    -- Calculate entropy of URI access pattern
-    -SUM(uri_prob * SAFE.LOG(uri_prob, 2)) AS uri_entropy,
-    -- Ratio of unique URIs to total requests
-    SAFE_DIVIDE(
-      COUNT(DISTINCT cs_uri_stem),
-      COUNT(*)
-    ) AS uri_diversity_ratio
-  FROM (
-    SELECT
-      ip,
-      log_date,
-      cs_uri_stem,
-      COUNT(*) AS uri_count,
-      SUM(COUNT(*)) OVER (PARTITION BY ip, log_date) AS total_count,
-      SAFE_DIVIDE(
-        COUNT(*),
-        SUM(COUNT(*)) OVER (PARTITION BY ip, log_date)
-      ) AS uri_prob
-    FROM filtered_logs
-    GROUP BY ip, log_date, cs_uri_stem
-  )
-  GROUP BY ip, log_date
 )
--- Combine all features (matching DDL schema)
 SELECT
   s.ip,
   s.log_date,
   CAST(s.req_total AS INT64) AS req_total,
   CAST(s.unique_uri AS INT64) AS unique_uri,
-  CAST(ROUND(s.err_ratio, 4) AS FLOAT64) AS err_ratio,
-  CAST(COALESCE(r.max_rps, 0) AS INT64) AS max_rps,
-  CAST(ROUND(COALESCE(e.ua_entropy, 0.0), 4) AS FLOAT64) AS ua_entropy
-FROM ip_basic_stats s
-LEFT JOIN max_rps_stats r 
-  ON s.ip = r.ip AND s.log_date = r.log_date
-LEFT JOIN ua_entropy_calc e 
-  ON s.ip = e.ip AND s.log_date = e.log_date
-LEFT JOIN uri_pattern_stats u
-  ON s.ip = u.ip AND s.log_date = u.log_date
+  CAST(s.err_ratio AS FLOAT64) AS err_ratio,
+  CAST(s.max_rps AS INT64) AS max_rps,
+  CAST(IFNULL(e.ua_entropy, 0.0) AS FLOAT64) AS ua_entropy
+FROM ip_stats s
+LEFT JOIN ua_entropy e
+USING(ip, log_date)
