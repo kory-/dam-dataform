@@ -1,7 +1,6 @@
 {
   "defaultDatabase": "dam-test-464312",
   "defaultSchema": "dam_workflow_test",
-  "assertionSchema": "dataform_assertions",
   "warehouse": "bigquery",
   "defaultLocation": "asia-northeast1"
 }

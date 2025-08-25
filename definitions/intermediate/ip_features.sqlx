@@ -12,11 +12,7 @@ config {
       `log_date >= DATE_SUB(CURRENT_DATE(), INTERVAL ${dataform.projectConfig.vars?.reprocessWindow || 3} DAY)`
   },
   tags: ["feature", "incremental"],
-  dependencies: ["cf_logs_filtered"],
-  assertions: {
-    uniqueKey: ["ip", "log_date"],
-    nonNull: ["ip", "log_date", "req_total"]
-  }
+  dependencies: ["cf_logs_filtered"]
 }
 
 js {

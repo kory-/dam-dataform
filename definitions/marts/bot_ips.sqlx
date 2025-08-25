@@ -8,8 +8,7 @@ config {
     clusterBy: ["ip", "bot_flag"]
   },
   tags: ["mart"],
-  dependencies: ["ip_features"],
-  disabled: true  // 一時的に無効化（bot_modelが作成されるまで）
+  dependencies: ["ip_features"]
 }
 
 -- ML-based bot detection using anomaly detection

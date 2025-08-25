@@ -4,8 +4,7 @@ config {
   name: "logs_enriched",
   description: "CloudFront logs enriched with bot detection results",
   tags: ["view", "mart"],
-  dependencies: ["cf_logs_filtered", "bot_ips"],
-  disabled: true  // 一時的に無効化（bot_modelが作成されるまで）
+  dependencies: ["cf_logs", "bot_ips"]
 }
 
 -- Enrich logs with bot detection results (matching DDL view)
@@ -13,7 +12,7 @@ SELECT
   l.*,
   b.bot_flag,
   b.anomaly_score
-FROM ${ref("cf_logs_filtered")} AS l
+FROM ${ref("cf_logs")} AS l
 LEFT JOIN ${ref("bot_ips")} AS b
   ON l.c_ip = b.ip
   AND DATE(l.date) = b.log_date
